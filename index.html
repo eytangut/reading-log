@@ -1,0 +1,154 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#b8432f"><link rel="manifest" href="manifest.json"><title>Reading Log</title>
+<style>
+:root{--bg:#f3ead6;--fg:#231f1a;--card:#fbf6e9;--ac:#1f2a44;--on:#f3ead6;--red:#b8432f;--mu:#7a6f5a;--bd:#cdbd93;--serif:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif}
+@media(prefers-color-scheme:dark){:root{--bg:#14181b;--fg:#e9e2cf;--card:#1e2427;--ac:#e8a64c;--on:#14181b;--red:#e9785f;--mu:#9a9682;--bd:#394042}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg) repeating-linear-gradient(transparent 0 31px,color-mix(in srgb,var(--bd) 50%,transparent) 31px 32px);color:var(--fg);font:16px/1.4 var(--serif);padding-bottom:90px}
+body:before{content:"";position:fixed;left:30px;top:0;bottom:0;width:1px;background:var(--red);opacity:.4;pointer-events:none}
+main{padding:10px 14px 10px 44px;max-width:640px;margin:auto}
+h2{font-style:italic;font-weight:400;font-size:1.9em;margin:.3em 0 .5em;line-height:1.1}
+.mast{display:flex;justify-content:space-between;align-items:center;font-style:italic;letter-spacing:.2em;color:var(--red);border-bottom:4px double var(--red);padding-bottom:4px;margin-bottom:10px}
+.mast button{box-shadow:none;border:0;background:none;font-size:1.2em}
+button,input,select{font:inherit;color:inherit}
+input,select{width:100%;padding:8px 6px;border:0;border-bottom:2px solid var(--bd);border-radius:0;background:color-mix(in srgb,var(--card) 65%,transparent)}
+input:focus,select:focus{outline:0;border-bottom-color:var(--red)}
+button{border:1.5px solid var(--fg);background:var(--card);border-radius:3px;padding:9px 14px;box-shadow:2px 2px 0 var(--fg)}
+button:active{transform:translate(2px,2px);box-shadow:none}
+.pri{background:var(--ac);color:var(--on);border-color:var(--ac);font-weight:700;letter-spacing:.04em}
+.big{width:100%;padding:15px;font-size:1.1em;margin:8px 0}
+.item{background:var(--card);border:1.5px solid var(--bd);border-left:12px solid hsl(var(--h,30) 42% 38%);border-radius:2px 8px 8px 2px;box-shadow:3px 3px 0 var(--bd);padding:10px 12px;margin:12px 0;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.item b{font-size:1.08em}.mu{color:var(--mu);font-size:.85em;font-style:italic}.row{display:flex;gap:6px;align-items:flex-end}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{padding:4px 10px;font-size:.85em;border:1.5px dashed var(--mu);box-shadow:none;background:transparent}
+.chip.on{background:var(--red);color:#fff;border:1.5px solid var(--red);transform:rotate(-1.5deg);font-weight:700}
+label{display:block;margin:14px 0 4px;font-size:.68em;letter-spacing:.14em;text-transform:uppercase;color:var(--mu)}
+#nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:2px solid var(--fg);padding:0 8px env(safe-area-inset-bottom)}
+#nav button{flex:1;border:0;box-shadow:none;border-radius:0;background:none;padding:14px 0 20px;margin:0 6px}
+#nav .on{background:var(--red);color:#fff;clip-path:polygon(0 0,100% 0,100% 100%,50% 80%,0 100%);margin-top:-2px}
+#sheet{position:fixed;inset:0;background:#000a;overflow:auto;z-index:5}
+#sheet .card{background:var(--card);margin:20px auto;width:calc(100% - 16px);max-width:620px;padding:14px 16px;border-top:8px solid var(--red);border-radius:4px;box-shadow:6px 6px 0 #0006}
+#bn{background:var(--red);color:#fff;padding:10px;text-align:center;position:relative;z-index:2}
+#clk{font:700 3.1em ui-monospace,monospace;text-align:center;color:var(--red);border:3px double var(--red);padding:12px 6px;transform:rotate(-2deg);margin:32px 4px;letter-spacing:.04em}
+#clk:before{content:"NOW READING · ELAPSED";display:block;font:.22em var(--serif);letter-spacing:.3em}
+.scan{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:9;background:#000}
+.stats{display:flex;gap:10px;margin:8px 0}.stats div{flex:1;border:2px solid var(--red);color:var(--red);border-radius:4px;padding:6px;text-align:center;transform:rotate(-1.5deg)}
+.stats div:nth-child(2){transform:rotate(1deg)}.stats b{font-size:1.3em}
+</style></head><body>
+<div id="bn" hidden onclick="reconnect()">Tap to reconnect your database file (changes are safe in the app)</div>
+<main id="app"></main><nav id="nav"></nav><div id="sheet" hidden></div>
+<script src="sql-wasm.js"></script>
+<script>
+const $=s=>document.querySelector(s),p2=n=>String(n).padStart(2,'0');
+const GEN=['fantasy','sci-fi','mystery/thriller','romance','historical fiction','literary','horror','young adult','humor','classic','graphic novel','poetry','history','biography/memoir','science','philosophy','psychology','self-help','business','politics','religion','essays','travel','reference/textbook'];
+const ORIG=['recommendation','assigned','browsing','series','book club','award list','same author','other'],ACQ=['library','bought','borrowed','gift','free','secondhand','subscription','other'],
+ST=['reading','finished','abandoned','paused','waiting'],FMT=['paper','ereader','phone','audio','other'],LOC=['home','bed','commute','school','work','outdoors','other'],UNITS=['pages','percent','chapters','minutes','location'];
+const SCHEMA=`CREATE TABLE IF NOT EXISTS books(book_id INTEGER PRIMARY KEY,title TEXT NOT NULL,author TEXT,language TEXT,is_translation INTEGER,is_fiction INTEGER,genre TEXT,pages INTEGER,pub_year INTEGER,difficulty INTEGER CHECK(difficulty BETWEEN 1 AND 3),origin TEXT,acquired TEXT,price REAL,status TEXT,started_on TEXT,ended_on TEXT,rating INTEGER CHECK(rating BETWEEN 1 AND 3),would_reread INTEGER,isbn TEXT);
+CREATE TABLE IF NOT EXISTS sessions(session_id INTEGER PRIMARY KEY,book_id INTEGER NOT NULL REFERENCES books(book_id),start_ts TEXT NOT NULL,end_ts TEXT NOT NULL,progress_units TEXT,start_pos REAL,end_pos REAL,format TEXT,location TEXT,focus INTEGER CHECK(focus BETWEEN 1 AND 3),interrupted INTEGER);`;
+const BC=['title','author','language','is_translation','is_fiction','genre','pages','pub_year','difficulty','origin','acquired','price','status','started_on','ended_on','rating','would_reread','isbn'];
+let SQL,db,handle,tab='read',filt='',qs='';
+const H=t=>`style="--h:${Math.abs([...t].reduce((a,c)=>a*31+c.charCodeAt(0)|0,7))%360}"`;
+const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function iso(d){const o=-d.getTimezoneOffset(),a=Math.abs(o);return`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}${o>=0?'+':'-'}${p2(a/60|0)}:${p2(a%60)}`}
+const loc=s=>iso(new Date(s)).slice(0,16),today=()=>iso(new Date()).slice(0,10);
+const num=v=>v===''||v==null?null:Number(v),tri=v=>v==null?null:v==='yes'?1:0,triv=v=>v==null?null:v?'yes':'no';
+const mins=(a,b)=>Math.max(0,Math.round((new Date(b)-new Date(a))/6e4)),fm=m=>m>=60?`${m/60|0}h ${m%60}m`:`${m}m`;
+// storage
+const idb=(m,k,v)=>new Promise((res,rej)=>{const o=indexedDB.open('rl',1);o.onupgradeneeded=()=>o.result.createObjectStore('kv');o.onsuccess=()=>{const s=o.result.transaction('kv',m==='get'?'readonly':'readwrite').objectStore('kv'),r=m==='get'?s.get(k):s.put(v,k);r.onsuccess=()=>res(r.result);r.onerror=rej}});
+const all=(sql,a=[])=>{const s=db.prepare(sql);s.bind(a);const r=[];while(s.step())r.push(s.getAsObject());s.free();return r};
+let tm;function run(sql,a=[]){db.run(sql,a);clearTimeout(tm);tm=setTimeout(flush,300)}
+async function flush(){const b=db.export();await idb('set','c',b);let ok=!handle;if(handle)try{if(await handle.queryPermission({mode:'readwrite'})==='granted'){const w=await handle.createWritable();await w.write(b);await w.close();ok=true}}catch{}
+await idb('set','d',ok?0:1);$('#bn').hidden=ok}
+async function reconnect(){try{if(await handle.requestPermission({mode:'readwrite'})!=='granted')return;if(await idb('get','d'))await flush();else{db=new SQL.Database(new Uint8Array(await(await handle.getFile()).arrayBuffer()));ensure();$('#bn').hidden=true;render()}}catch(e){alert(e.message)}}
+const ensure=()=>{db.run('PRAGMA foreign_keys=ON');db.exec(SCHEMA);if(!all('PRAGMA table_info(books)').some(c=>c.name=='isbn'))db.run('ALTER TABLE books ADD COLUMN isbn TEXT')};
+async function link(mode){const t=[{description:'SQLite',accept:{'application/x-sqlite3':['.sqlite','.db']}}];
+try{if(mode==='new')handle=await showSaveFilePicker({suggestedName:'reading.sqlite',types:t});else[handle]=await showOpenFilePicker({types:t})}catch{return}
+await idb('set','h',handle);if(mode==='open')db=new SQL.Database(new Uint8Array(await(await handle.getFile()).arrayBuffer()));else db=db||new SQL.Database();ensure();await flush();close();render()}
+function download(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([db.export()]));a.download='reading.sqlite';a.click()}
+// ui helpers
+const F=(l,h)=>`<label>${l}</label>${h}`;
+const chips=(n,o,v,m)=>`<div class="chips" data-n="${n}" data-m="${m?1:0}">${o.map(x=>{const[a,l]=Array.isArray(x)?x:[x,x];return`<button type="button" class="chip${m?(v||[]).includes(a):String(v)===String(a)?' on':''}" data-v="${a}">${l}</button>`}).join('')}</div>`;
+const cv=(s,n)=>{const p=s.querySelector(`[data-n=${n}]`),on=[...p.querySelectorAll('.on')].map(x=>x.dataset.v);return p.dataset.m==='1'?on:(on[0]??null)};
+const iv=(s,n)=>s.querySelector(`[name=${n}]`).value.trim();
+document.addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;const p=c.parentElement;if(p.dataset.m!=='1'&&!c.classList.contains('on'))p.querySelectorAll('.on').forEach(x=>x.classList.remove('on'));c.classList.toggle('on')});
+function sheet(h){const s=$('#sheet');s.innerHTML=`<div class="card">${h}</div>`;s.hidden=false;return s.firstChild}
+const close=()=>$('#sheet').hidden=true;
+// lookup + scan
+async function lookup(isbn){
+try{const v=(await(await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:'+isbn)).json()).items?.[0]?.volumeInfo;if(v)return{title:v.title+(v.subtitle?': '+v.subtitle:''),author:(v.authors||[]).join(', '),language:v.language,pages:v.pageCount,pub_year:parseInt(v.publishedDate),cats:(v.categories||[]).join(' ').toLowerCase()}}catch{}
+try{const v=(await(await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`)).json())['ISBN:'+isbn];if(v)return{title:v.title,author:(v.authors||[]).map(a=>a.name).join(', '),pages:v.number_of_pages,pub_year:parseInt((v.publish_date||'').match(/\d{4}/))}}catch{}}
+async function scan(cb){if(!('BarcodeDetector'in window))return alert('Scanning not supported on this browser; type the ISBN.');let st;try{st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})}catch{return alert('Camera unavailable')}
+const v=document.createElement('video');v.className='scan';v.setAttribute('playsinline','');v.srcObject=st;document.body.append(v);await v.play();const d=new BarcodeDetector({formats:['ean_13','ean_8']});let on=1;const stop=()=>{on=0;st.getTracks().forEach(t=>t.stop());v.remove()};v.onclick=stop;
+while(on){try{const r=await d.detect(v);if(r[0]){stop();return cb(r[0].rawValue)}}catch{}await new Promise(r=>setTimeout(r,200))}}
+// book sheet
+function bookSheet(b={}){const ed=!!b.book_id;const s=sheet(`<h2>${ed?'Edit book':'New book'}</h2>
+<div class="row"><input name="isbn" placeholder="ISBN" value="${esc(b.isbn)}"><button id="sc">📷</button><button id="lk">Look up</button></div>
+${F('Title *',`<input name="title" value="${esc(b.title)}">`)}${F('Author',`<input name="author" value="${esc(b.author)}">`)}
+${F('Language (ISO code)',`<input name="language" list="lg" value="${esc(b.language)}"><datalist id="lg">${['en','he','es','fr','de','ru','ar','it','pt'].map(x=>`<option>${x}`).join('')}</datalist>`)}
+${F('Translation',chips('tr',['yes','no'],triv(b.is_translation)))}${F('Fiction',chips('fic',['yes','no'],triv(b.is_fiction)))}
+${F('Genres',chips('genre',GEN,(b.genre||'').split(','),1))}
+<div class="row"><div>${F('Pages',`<input name="pages" type="number" inputmode="numeric" value="${esc(b.pages)}">`)}</div><div>${F('Year',`<input name="pub_year" type="number" inputmode="numeric" value="${esc(b.pub_year)}">`)}</div><div>${F('Price',`<input name="price" type="number" step="any" value="${esc(b.price)}">`)}</div></div>
+${F('Difficulty (1 easy – 3 hard)',chips('diff',[1,2,3],b.difficulty))}${F('Origin',chips('origin',ORIG,b.origin))}${F('Acquired',chips('acq',ACQ,b.acquired))}
+${F('Status',chips('status',ST,b.status||'waiting'))}
+<div class="row"><div>${F('Started',`<input name="started_on" type="date" value="${esc(b.started_on)}">`)}</div><div>${F('Ended',`<input name="ended_on" type="date" value="${esc(b.ended_on)}">`)}</div></div>
+${F('Rating (1–3)',chips('rating',[1,2,3],b.rating))}${F('Would re-read',chips('reread',['yes','no'],triv(b.would_reread)))}
+<div class="row" style="margin-top:16px"><button class="pri" style="flex:1" id="sv">Save</button><button onclick="close()">Cancel</button>${ed?'<button id="dl">🗑</button>':''}</div>`);
+s.querySelector('#sc').onclick=()=>scan(c=>{s.querySelector('[name=isbn]').value=c;s.querySelector('#lk').click()});
+s.querySelector('#lk').onclick=async()=>{const i=iv(s,'isbn').replace(/[^\dXx]/g,'');if(!i)return;const r=await lookup(i);if(!r)return alert('Not found; enter manually.');
+for(const k of['title','author','language','pages','pub_year'])if(r[k]&&!s.querySelector(`[name=${k}]`).value)s.querySelector(`[name=${k}]`).value=r[k];
+if(r.cats){const f=/fiction|novel/.test(r.cats)&&!/nonfiction/.test(r.cats);s.querySelector(`[data-n=fic] [data-v=${f?'yes':'no'}]`).click();GEN.filter(g=>r.cats.includes(g.split(/[ \/]/)[0])).forEach(g=>{const c=s.querySelector(`[data-n=genre] [data-v="${g}"]`);if(!c.classList.contains('on'))c.click()})}};
+if(ed)s.querySelector('#dl').onclick=()=>{if(confirm('Delete this book and all its sessions?')){run('DELETE FROM sessions WHERE book_id=?',[b.book_id]);run('DELETE FROM books WHERE book_id=?',[b.book_id]);close();render()}};
+s.querySelector('#sv').onclick=()=>{const g=n=>iv(s,n),title=g('title');if(!title)return alert('Title is required');
+const ib=g('isbn').replace(/[^\dXx]/g,'').toUpperCase();if(!ed&&all("SELECT 1 FROM books WHERE lower(title)=lower(?) OR (?<>'' AND isbn=?)",[title,ib,ib]).length&&!confirm('A book with this title exists. Add anyway?'))return;
+const st=cv(s,'status');let sd=g('started_on')||null,en=g('ended_on')||null;if(st!=='waiting'&&!sd)sd=today();if((st==='finished'||st==='abandoned')&&!en)en=today();
+const v=[title,g('author')||null,g('language').toLowerCase()||null,tri(cv(s,'tr')),tri(cv(s,'fic')),cv(s,'genre').join(',')||null,num(g('pages')),num(g('pub_year')),num(cv(s,'diff')),cv(s,'origin'),cv(s,'acq'),num(g('price')),st,sd,en,num(cv(s,'rating')),tri(cv(s,'reread')),g('isbn').replace(/[^\dXx]/g,'').toUpperCase()||null];
+if(ed)run(`UPDATE books SET ${BC.map(c=>c+'=?').join(',')} WHERE book_id=?`,[...v,b.book_id]);else run(`INSERT INTO books(${BC}) VALUES(${BC.map(()=>'?')})`,v);close();render()}}
+const editBook=id=>bookSheet(all('SELECT * FROM books WHERE book_id=?',[id])[0]);
+// sessions
+function last(bid){return all('SELECT * FROM sessions WHERE book_id=? ORDER BY end_ts DESC LIMIT 1',[bid])[0]||{}}
+function startSheet(bid){const l=last(bid),l2=all('SELECT format,location FROM sessions ORDER BY end_ts DESC LIMIT 1')[0]||{};
+const s=sheet(`<h2>Start reading</h2>${F('Format',chips('format',FMT,l.format||l2.format))}${F('Location',chips('location',LOC,l2.location))}${F('Unit',chips('unit',UNITS,l.progress_units||'pages'))}${F('Start position',`<input name="pos" type="number" step="any" inputmode="decimal" value="${esc(l.end_pos??0)}">`)}
+<button class="pri big" id="go">▶ Start</button><button onclick="close()">Cancel</button>`);
+s.querySelector('#go').onclick=()=>{localStorage.timer=JSON.stringify({book_id:bid,start:iso(new Date()),format:cv(s,'format'),location:cv(s,'location'),unit:cv(s,'unit')||'pages',start_pos:num(iv(s,'pos'))});
+const b=all('SELECT status,started_on FROM books WHERE book_id=?',[bid])[0];if(b.status!=='reading'||!b.started_on)run('UPDATE books SET status=\'reading\',started_on=COALESCE(started_on,?) WHERE book_id=?',[today(),bid]);close();render()}}
+function sessSheet(x,isTimer){const ed=!!x.session_id,books=all("SELECT book_id,title FROM books ORDER BY status='reading' DESC,title");
+const s=sheet(`<h2>${ed?'Edit session':isTimer?'Finish session':'Log session'}</h2>
+${F('Book',`<select name="book">${books.map(b=>`<option value="${b.book_id}"${b.book_id==x.book_id?' selected':''}>${esc(b.title)}</option>`).join('')}</select>`)}
+<div class="row"><div>${F('Start',`<input name="st" type="datetime-local" value="${loc(x.start_ts)}">`)}</div><div>${F('End',`<input name="en" type="datetime-local" value="${loc(x.end_ts)}">`)}</div></div>
+${F('Unit',chips('unit',UNITS,x.progress_units||'pages'))}
+<div class="row"><div>${F('Start pos',`<input name="sp" type="number" step="any" inputmode="decimal" value="${esc(x.start_pos)}">`)}</div><div>${F('End pos',`<input name="ep" type="number" step="any" inputmode="decimal" value="${esc(x.end_pos)}">`)}</div></div>
+${F('Format',chips('format',FMT,x.format))}${F('Location',chips('location',LOC,x.location))}${F('Focus (1 low – 3 high)',chips('focus',[1,2,3],x.focus))}${F('Interrupted',chips('int',['yes','no'],triv(x.interrupted)))}
+<div class="row" style="margin-top:16px"><button class="pri" style="flex:1" id="sv">Save</button><button onclick="close()">${isTimer?'Keep timing':'Cancel'}</button>${ed?'<button id="dl">🗑</button>':''}${isTimer?'<button id="ds">Discard</button>':''}</div>`);
+if(ed)s.querySelector('#dl').onclick=()=>{if(confirm('Delete session?')){run('DELETE FROM sessions WHERE session_id=?',[x.session_id]);close();render()}};
+if(isTimer)s.querySelector('#ds').onclick=()=>{if(confirm('Discard this timer?')){localStorage.removeItem('timer');close();render()}};
+if(!ed&&!isTimer)s.querySelector('[name=book]').onchange=e=>{const l=last(+e.target.value),set=(n,v)=>s.querySelectorAll(`[data-n=${n}] .chip`).forEach(c=>c.classList.toggle('on',c.dataset.v===String(v)));set('unit',l.progress_units||'pages');if(l.format)set('format',l.format);s.querySelector('[name=sp]').value=l.end_pos??''};
+s.querySelector('#sv').onclick=()=>{const a=new Date(iv(s,'st')),b=new Date(iv(s,'en'));if(isNaN(a)||isNaN(b)||b<a)return alert('Check start/end times');
+const bid=+iv(s,'book'),unit=cv(s,'unit')||'pages',ep=num(iv(s,'ep')),v=[bid,iso(a),iso(b),unit,num(iv(s,'sp')),ep,cv(s,'format'),cv(s,'location'),num(cv(s,'focus')),tri(cv(s,'int'))];
+const cols='book_id,start_ts,end_ts,progress_units,start_pos,end_pos,format,location,focus,interrupted';
+if(ed)run(`UPDATE sessions SET ${cols.split(',').map(c=>c+'=?').join(',')} WHERE session_id=?`,[...v,x.session_id]);else run(`INSERT INTO sessions(${cols}) VALUES(${v.map(()=>'?')})`,v);
+if(isTimer)localStorage.removeItem('timer');close();
+const bk=all('SELECT * FROM books WHERE book_id=?',[bid])[0];if(!ed&&bk.status!=='finished'&&ep!=null&&((unit==='pages'&&bk.pages&&ep>=bk.pages)||(unit==='percent'&&ep>=100))&&confirm('Reached the end. Mark as finished?')){run("UPDATE books SET status='finished',ended_on=? WHERE book_id=?",[today(),bid]);bookSheet({...bk,status:'finished',ended_on:today()})}render()}}
+function manual(){const n=new Date(),bk=all("SELECT book_id FROM books ORDER BY status='reading' DESC LIMIT 1")[0];if(!bk)return alert('Add a book first');const l=last(bk.book_id),l2=all('SELECT format,location FROM sessions ORDER BY end_ts DESC LIMIT 1')[0]||{};
+sessSheet({book_id:bk.book_id,start_ts:iso(new Date(n-18e5)),end_ts:iso(n),start_pos:l.end_pos,progress_units:l.progress_units,format:l.format||l2.format,location:l2.location})}
+function stopTimer(){const t=JSON.parse(localStorage.timer);sessSheet({book_id:t.book_id,start_ts:t.start,end_ts:iso(new Date()),progress_units:t.unit,start_pos:t.start_pos,end_pos:t.start_pos,format:t.format,location:t.location},true)}
+// views
+function render(){$('#nav').innerHTML=[['read','📖 Read'],['lib','📚 Library'],['hist','🕑 History']].map(([k,l])=>`<button class="${tab===k?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('');
+const a=$('#app');if(!db){a.innerHTML=`<h2>Reading Log</h2><p class="mu">Choose where your SQLite database lives.</p><button class="pri big" onclick="link('new')">Create new database file</button><button class="big" onclick="link('open')">Open existing file</button><button class="big" onclick="db=new SQL.Database();ensure();flush();render()">Browser storage only (for now)</button>`;return}
+a.innerHTML=`<div class="mast"><span>✦ ex libris ✦</span><button onclick="settings()">⚙</button></div>`+views[tab]()}
+const views={read(){const t=JSON.parse(localStorage.timer||'null');
+if(t){const b=all('SELECT title FROM books WHERE book_id=?',[t.book_id])[0];return`<h2>${esc(b.title)}</h2><div id="clk">0:00:00</div><button class="pri big" onclick="stopTimer()">■ Stop &amp; save</button>`}
+const r=all("SELECT * FROM books WHERE status='reading'");return`<h2>Reading now</h2>${r.map(b=>`<div class="item" ${H(b.title)}><div><b>${esc(b.title)}</b><div class="mu">${esc(b.author)}</div></div><button class="pri" onclick="startSheet(${b.book_id})">▶ Start</button></div>`).join('')||'<p class="mu">Nothing in progress. Pick a book from the Library or add one.</p>'}
+<button class="big" onclick="manual()">＋ Log a past session</button><button class="big" onclick="bookSheet()">＋ Add book</button>`},
+lib(){const b=all('SELECT * FROM books ORDER BY title').filter(b=>(!filt||b.status===filt)&&(b.title+' '+(b.author||'')).toLowerCase().includes(qs));
+return`<input placeholder="Search" value="${esc(qs)}" oninput="qs=this.value.toLowerCase();render();const i=document.querySelector('input');i.focus();i.setSelectionRange(99,99)"><div class="chips" style="margin:8px 0">${['',...ST].map(x=>`<button class="chip${filt===x?' on':''}" onclick="filt='${x}';render()">${x||'all'}</button>`).join('')}</div>
+${b.map(b=>`<div class="item" ${H(b.title)} onclick="editBook(${b.book_id})"><div><b>${esc(b.title)}</b><div class="mu">${esc(b.author)}</div></div><span class="mu">${b.status||''}</span></div>`).join('')||'<p class="mu">No books.</p>'}<button class="pri big" onclick="bookSheet()">＋ Add book</button>`},
+hist(){const r=all('SELECT s.*,b.title FROM sessions s JOIN books b USING(book_id) ORDER BY start_ts DESC'),tot=d=>fm(r.filter(x=>new Date(x.start_ts)>=Date.now()-d*864e5).reduce((a,x)=>a+mins(x.start_ts,x.end_ts),0));
+return`<div class="stats"><div><b>${tot(1)}</b><div class="mu">24 h</div></div><div><b>${tot(7)}</b><div class="mu">7 days</div></div><div><b>${tot(30)}</b><div class="mu">30 days</div></div></div>
+${r.map(x=>`<div class="item" ${H(x.title)} onclick="sessSheet(all('SELECT * FROM sessions WHERE session_id=${x.session_id}')[0])"><div><b>${esc(x.title)}</b><div class="mu">${x.start_ts.slice(0,16).replace('T',' ')} · ${x.start_pos??'?'}→${x.end_pos??'?'} ${x.progress_units||''}</div></div><b>${fm(mins(x.start_ts,x.end_ts))}</b></div>`).join('')||'<p class="mu">No sessions yet.</p>'}<button class="pri big" onclick="manual()">＋ Log a past session</button>`}};
+function settings(){const s=sheet(`<h2>Database</h2><p class="mu">${handle?'Linked: '+esc(handle.name):'Browser storage only'}</p><button class="big" onclick="link('new')">Save to new file…</button><button class="big" onclick="link('open')">Open another file…</button><button class="big" onclick="download()">Download a copy</button><button class="big" onclick="close()">Close</button>`)}
+setInterval(()=>{const c=$('#clk'),t=JSON.parse(localStorage.timer||'null');if(c&&t){const x=Math.floor((Date.now()-new Date(t.start))/1e3);c.textContent=`${x/3600|0}:${p2(x/60%60|0)}:${p2(x%60)}`}},500);
+(async()=>{if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');SQL=await initSqlJs({locateFile:f=>f});handle=await idb('get','h');const c=await idb('get','c');let ok=false;
+if(handle)try{ok=await handle.queryPermission({mode:'readwrite'})==='granted'}catch{}
+const dirty=await idb('get','d');
+if(handle&&ok&&!dirty)db=new SQL.Database(new Uint8Array(await(await handle.getFile()).arrayBuffer()));else if(c){db=new SQL.Database(c);if(handle&&!ok)$('#bn').hidden=false;else if(dirty)flush()}
+if(db)ensure();render()})();
+</script></body></html>
